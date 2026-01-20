@@ -1,4 +1,4 @@
-# Env Var Detector (WASM)
+# wasm2env
 
  **Statically detect environment variable dependencies in WebAssembly binaries**
 
@@ -67,14 +67,14 @@ Output:
 
 ```text
 🔍 Analyzing WASM module for environment dependencies...
-File: my_component.wasm
+File: openai_component.wasm
 ---------------------------------------------------
 
 📋 Required Environment Variables (3):
 
   1. DATABASE_URL
-  2. API_KEY
-  3. SERVICE_PORT
+  2. PASSWORD_TOKEN
+  3. OPENAI_API_KEY
 
 💡 Configure these in wasmcloud before deployment.
 
