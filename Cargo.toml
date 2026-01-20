@@ -1,0 +1,8 @@
+[package]
+name = "env-inspector"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmparser = "0.121.0"
+anyhow = "1.0"
