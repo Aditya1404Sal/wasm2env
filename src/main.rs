@@ -6,7 +6,7 @@ use wasmparser::{ConstExpr, FunctionBody, Operator, Parser, Payload};
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: env-var-detector <wasm-file>");
+        eprintln!("Usage: wasm2env <wasm-file>");
         eprintln!();
         eprintln!("Detects environment variables by analyzing WASM bytecode.");
         return Ok(());
