@@ -1,112 +1,192 @@
 # wasm2env
 
- **Statically detect environment variable dependencies in WebAssembly binaries**
-
-This tool analyzes **WASM bytecode** to identify **environment variables** referenced by a module *without executing it*.
-It’s designed for **wasmCloud / component-based runtimes**, where knowing env dependencies ahead of deployment matters.
-
----
-
-## Why this exists
-
-In WASM deployments (especially wasmCloud):
-
-* Environment variables must be **explicitly configured**
-* Missing env vars cause **runtime failures**
-* Source code may not be available (3rd-party components, OCI artifacts)
-
-This tool answers a simple but critical question:
-
-> **“Which environment variables does this WASM module expect?”**
-
----
-
-## How it works (high level)
-
-The detector performs **static analysis** on the WASM binary:
-
-1. Parses the module using `wasmparser`
-2. Collects:
-
-   * Data segments (for embedded strings)
-   * Global constant values
-3. Builds a memory map of static data
-4. Simulates function execution:
-
-   * Tracks stack values
-   * Propagates constants where possible
-   * Detects `(ptr, len)` string arguments passed to function calls
-5. Applies heuristics to identify **environment-variable-like strings**
-
----
+A Rust library and CLI tool to detect environment variable dependencies in WASM binaries by analyzing bytecode.
 
 ## Features
 
-* Static (no WASM execution)
-* No source code required
-* Handles Rust-compiled WASM reasonably well
-* Filters noise (stdlib, Rust internals, common constants)
-* Outputs unique env vars only
-* wasmCloud-friendly output
+-  Static analysis of WASM bytecode to detect env var usage
+-  Library crate for programmatic usage
+-  CLI tool for command-line usage
+-  FFI-friendly API for integration with other languages (Elixir, etc.)
 
----
+## Installation
+
+### As a library dependency
+
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+wasm2env = { git = "https://github.com/Aditya1404Sal/wasm2env" }
+```
+
+### As a CLI tool
+```bash
+cargo install --git https://github.com/Aditya1404Sal/wasm2env
+```
+
+Or build locally:
+```bash
+git clone https://github.com/Aditya1404Sal/wasm2env
+cd wasm2env
+cargo build --release
+# Binary will be at: ./target/release/wasm2env
+```
 
 ## Usage
 
-```bash
-./wasm2env -- <path-to-wasm-file>
+### Rust Library
+
+#### Scan from file path
+
+```rust
+use wasm2env::scan_wasm_file;
+
+fn main() -> anyhow::Result<()> {
+    let env_vars = scan_wasm_file("./my-component.wasm")?;
+    
+    for var in env_vars {
+        println!("Required: {}", var);
+    }
+    
+    Ok(())
+}
 ```
 
-### Example
+#### Scan from bytes (recommended for FFI)
+
+```rust
+use wasm2env::scan_wasm_bytes;
+
+fn main() -> anyhow::Result<()> {
+    let wasm_data = std::fs::read("./my-component.wasm")?;
+    let env_vars = scan_wasm_bytes(&wasm_data)?;
+    
+    for var in env_vars {
+        println!("Required: {}", var);
+    }
+    
+    Ok(())
+}
+```
+
+### CLI
 
 ```bash
-./wasm2env openai_component.wasm
+wasm2env path/to/component.wasm
 ```
 
 Output:
-
-```text
-🔍 Analyzing WASM module for environment dependencies...
-File: openai_component.wasm
+```
+Analyzing WASM module for environment dependencies...
+File: path/to/component.wasm
 ---------------------------------------------------
 
-📋 Required Environment Variables (3):
+Required Environment Variables (3):
 
   1. DATABASE_URL
-  2. PASSWORD_TOKEN
-  3. OPENAI_API_KEY
+  2. API_KEY
+  3. SECRET_TOKEN
 
-💡 Configure these in wasmcloud before deployment.
+Configure these in wasmcloud before deployment.
 
 ---------------------------------------------------
 ```
 
----
+## Elixir Integration
 
-## Environment Variable Detection Heuristics
+For Elixir codebases, use [Rustler](https://github.com/rusterlium/rustler) to create a NIF.
 
-A string is considered an env var candidate if:
+### Step 1: Add Rustler NIF wrapper
 
-* Length is between **4–100 characters**
-* Contains mostly letters
-* Uses valid env-var characters (`A–Z`, `a–z`, `0–9`, `_`)
-* Matches common patterns:
+Create `native/wasm2env_nif/src/lib.rs`:
 
-  * `SCREAMING_SNAKE_CASE`
-  * `_KEY`, `_TOKEN`, `_SECRET`, `_URL`, `_PORT`, etc.
-* Excludes:
+```rust
+use rustler::{Encoder, Env, Term};
+use wasm2env::scan_wasm_bytes;
 
-  * Rust internals (`RUST_`, `BACKTRACE`)
-  * Common constants (`HTTP`, `JSON`, `TRUE`, `FALSE`)
-  * Mangled or invalid identifiers
+#[rustler::nif]
+fn scan_wasm(bytes: Vec<u8>) -> Result<Vec<String>, String> {
+    scan_wasm_bytes(&bytes)
+        .map_err(|e| format!("WASM scan error: {}", e))
+}
 
-This keeps false positives low while catching real deployment requirements.
+rustler::init!("Elixir.Wasm2Env.Native", [scan_wasm]);
+```
 
----
+### Step 2: Elixir module
 
-## Limitations (by design)
+```elixir
+defmodule Wasm2Env.Native do
+  use Rustler, otp_app: :your_app, crate: "wasm2env_nif"
 
-* Not a full WASM interpreter
-* Control flow is approximated
-* Dynamic string construction at runtime may not be detected
-* Obfuscated or encrypted strings won’t show up
+  # When your NIF is loaded, it will override this function
+  def scan_wasm(_bytes), do: :erlang.nif_error(:nif_not_loaded)
+end
+
+defmodule Wasm2Env do
+  @moduledoc """
+  Scans WASM binaries for environment variable dependencies.
+  """
+
+  @doc """
+  Scans a WASM file for environment variables.
+
+  ## Examples
+
+      iex> Wasm2Env.scan_file("./my_component.wasm")
+      {:ok, ["DATABASE_URL", "API_KEY"]}
+
+      iex> Wasm2Env.scan_file("./invalid.wasm")
+      {:error, "WASM scan error: ..."}
+  """
+  def scan_file(path) do
+    case File.read(path) do
+      {:ok, bytes} -> scan_bytes(bytes)
+      {:error, reason} -> {:error, "Failed to read file: #{reason}"}
+    end
+  end
+
+  @doc """
+  Scans WASM binary bytes for environment variables.
+
+  ## Examples
+
+      iex> wasm_bytes = File.read!("./my_component.wasm")
+      iex> Wasm2Env.scan_bytes(wasm_bytes)
+      {:ok, ["DATABASE_URL", "API_KEY"]}
+  """
+  def scan_bytes(bytes) when is_binary(bytes) do
+    bytes
+    |> :binary.bin_to_list()
+    |> Wasm2Env.Native.scan_wasm()
+    |> case do
+      {:ok, env_vars} -> {:ok, env_vars}
+      {:error, _} = error -> error
+    end
+  end
+end
+```
+
+### Step 3: Usage in Elixir
+
+```elixir
+# Scan a WASM file
+{:ok, env_vars} = Wasm2Env.scan_file("./my_component.wasm")
+IO.inspect(env_vars)
+# Output: ["DATABASE_URL", "API_KEY", "SECRET_TOKEN"]
+
+# Or scan bytes directly
+wasm_bytes = File.read!("./my_component.wasm")
+{:ok, env_vars} = Wasm2Env.scan_bytes(wasm_bytes)
+```
+
+## How It Works
+
+The library performs static analysis on WASM bytecode:
+
+1. **Parse WASM sections**: Extracts data segments and globals
+2. **Simulate execution**: Tracks constant values through the stack
+3. **Pattern matching**: Identifies strings matching env var patterns:
+   - `SCREAMING_SNAKE_CASE`
+   - Keywords: `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, `_URL`, etc.
+4. **Filtering**: Removes false positives (HTTP, LOCALHOST, etc.)
