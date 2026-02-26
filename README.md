@@ -1,13 +1,16 @@
 # wasm2env
 
-A Rust library and CLI tool to detect environment variable dependencies in WASM binaries by analyzing bytecode.
+A Rust library and CLI tool that detects environment variable and configuration dependencies in WASM components using call-graph taint analysis — no heuristics, no guessing.
 
 ## Features
 
--  Static analysis of WASM bytecode to detect env var usage
--  Library crate for programmatic usage
--  CLI tool for command-line usage
--  FFI-friendly API for integration with other languages (Elixir, etc.)
+- **Concrete detection** via WASI import call-graph tracing (not pattern matching)
+- Supports `wasi:cli/environment`, `wasi_snapshot_preview1`, and `wasi:config/store`
+- Handles WASM Component Model binaries (extracts and analyzes embedded core modules)
+- Walks all control flow branches (both arms of if/else, loop bodies, nested blocks)
+- Library crate for programmatic usage
+- CLI tool for command-line usage
+- FFI-friendly API for integration with other languages (Elixir, etc.)
 
 ## Installation
 
@@ -182,11 +185,24 @@ wasm_bytes = File.read!("./my_component.wasm")
 
 ## How It Works
 
-The library performs static analysis on WASM bytecode:
+The tool uses **call-graph taint analysis** — not heuristic pattern matching — to concretely identify which strings are used with WASI environment/config APIs.
 
-1. **Parse WASM sections**: Extracts data segments and globals
-2. **Simulate execution**: Tracks constant values through the stack
-3. **Pattern matching**: Identifies strings matching env var patterns:
-   - `SCREAMING_SNAKE_CASE`
-   - Keywords: `_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, `_URL`, etc.
-4. **Filtering**: Removes false positives (HTTP, LOCALHOST, etc.)
+### Pipeline
+
+1. **Extract core modules**: Parses the WASM Component Model envelope (via `wasmparser`) and extracts embedded core modules
+2. **Identify WASI imports**: Finds environment-related imports in each core module:
+   - `wasi:cli/environment` → `get-environment` (WASI preview2)
+   - `wasi_snapshot_preview1` → `environ_get` / `environ_sizes_get` (WASI preview1)
+   - `wasi:config/store` → `get` (WASI config store)
+3. **Build reverse call graph**: Using `walrus` structured IR, maps every function to the set of functions it calls
+4. **Taint propagation**: BFS from the WASI imports through the reverse call graph to find all functions that transitively call any environment/config API
+5. **Stack simulation**: Walks the walrus IR for every function, tracking `i32` constants through the operand stack and locals. On `IfElse`, forks the stack state and walks **both branches**
+6. **Capture at call sites**: When a `call` instruction targets a function in the tainted set, reads any `(ptr, len)` string arguments from the simulated stack and resolves them against the data segment memory map
+
+A string is reported if and only if it is passed as an argument to a function that ultimately calls a WASI environment or config API. No naming convention assumptions, no keyword matching.
+
+### What it does NOT do
+
+- No heuristic pattern matching (no `SCREAMING_SNAKE_CASE` guessing)
+- No dynamic execution (doesn't run the WASM binary)
+- No symbolic execution (tracks constants, not symbolic values)

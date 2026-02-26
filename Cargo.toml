@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0"
 wasmparser = "0.121"
+walrus = "0.22"
 
 [dev-dependencies]
 rustler = "*"
