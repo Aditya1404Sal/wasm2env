@@ -203,3 +203,112 @@ fn invalid_wasm_returns_error() {
 fn nonexistent_file_returns_error() {
     assert!(scan_wasm_file("does_not_exist.wasm").is_err());
 }
+
+// ===== Edge case tests =====
+
+// #11: Both std::env AND wasi:config/store in the same component
+#[test]
+fn config_and_env_combined() {
+    let vars = scan_wasm_file("test-components/config-and-env.wasm").unwrap();
+    assert!(vars.contains(&"RUNTIME_MODE".to_string()));
+    assert!(vars.contains(&"CONFIG_DB_URL".to_string()));
+    assert!(vars.contains(&"CONFIG_API_KEY".to_string()));
+    assert_eq!(vars.len(), 3);
+}
+
+// #12: Strings that look like env vars but aren't passed to env/config imports
+#[test]
+fn false_positive_resistance() {
+    let vars = scan_wasm_file("test-components/false-positive-resistance.wasm").unwrap();
+    assert!(
+        vars.is_empty(),
+        "false-positive-resistance should detect zero env vars, got: {vars:?}"
+    );
+}
+
+// #12b: Verify specific false-positive strings are NOT detected
+#[test]
+fn false_positive_specific_strings() {
+    let vars = scan_wasm_file("test-components/false-positive-resistance.wasm").unwrap();
+    let should_not_appear = [
+        "ERROR_CODE",
+        "STATUS_OK",
+        "INVALID_INPUT",
+        "NOT_FOUND",
+        "INTERNAL_ERROR",
+        "CONTENT_TYPE",
+        "ACCEPT_ENCODING",
+        "CACHE_CONTROL",
+    ];
+    for s in &should_not_appear {
+        assert!(
+            !vars.contains(&s.to_string()),
+            "should not detect non-env string: {s}"
+        );
+    }
+}
+
+// #13: Empty WASM component with zero embedded core modules
+#[test]
+fn empty_component_no_modules() {
+    // Component Model binary header (magic + version + layer)
+    // but with no ModuleSection payloads
+    let component_header = vec![
+        0x00, 0x61, 0x73, 0x6d, // WASM magic
+        0x0d, 0x00, 0x01, 0x00, // Component version (layer 1)
+    ];
+    let result = scan_wasm_bytes(&component_header).unwrap();
+    assert!(
+        result.is_empty(),
+        "empty component should detect zero env vars, got: {result:?}"
+    );
+}
+
+// #14: Scale test with 15 env vars
+#[test]
+fn scale_fifteen_env_vars() {
+    let vars = scan_wasm_file("test-components/scale-env.wasm").unwrap();
+    assert_eq!(
+        vars,
+        vec![
+            "APP_ENV",
+            "APP_NAME",
+            "APP_VERSION",
+            "DB_HOST",
+            "DB_NAME",
+            "DB_PASS",
+            "DB_PORT",
+            "DB_USER",
+            "LOG_LEVEL",
+            "REDIS_HOST",
+            "REDIS_PORT",
+            "SECRET_KEY",
+            "SMTP_HOST",
+            "SMTP_PORT",
+            "SMTP_USER",
+        ]
+    );
+    assert_eq!(vars.len(), 15);
+}
+
+// #15: Env var names containing digits
+#[test]
+fn env_vars_with_digits() {
+    let vars = scan_wasm_file("test-components/env-with-digits.wasm").unwrap();
+    assert_eq!(
+        vars,
+        vec![
+            "API_V2_KEY",
+            "AWS_S3_BUCKET",
+            "AWS_S3_REGION",
+            "OAUTH2_CLIENT_ID"
+        ]
+    );
+}
+
+// Config keys accessed through nested helper functions
+#[test]
+fn config_nested_calls() {
+    let vars = scan_wasm_file("test-components/config-nested.wasm").unwrap();
+    assert_eq!(vars, vec!["AUTH_TOKEN", "SERVICE_CONFIG"]);
+}

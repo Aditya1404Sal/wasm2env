@@ -1,0 +1,6 @@
+package component:config-nested;
+
+world config-nested {
+    import wasi:config/store@0.2.0-rc.1;
+    export run: func() -> string;
+}

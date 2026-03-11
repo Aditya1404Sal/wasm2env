@@ -14,7 +14,7 @@ TC_DIR="$ROOT_DIR/test-components"
 echo "Building test component WASM fixtures..."
 
 # std::env::var components (binary crates — output keeps hyphens)
-for component in single-env multi-env no-env conditional-env nested-calls many-vars; do
+for component in single-env multi-env no-env conditional-env nested-calls many-vars env-with-digits scale-env; do
   dir="$TC_DIR/$component"
   if [[ ! -d "$dir" ]]; then
     echo "  SKIP $component (not found)"
@@ -27,7 +27,7 @@ for component in single-env multi-env no-env conditional-env nested-calls many-v
 done
 
 # wasi:config/store components (cdylib crates — output uses underscores)
-for component in config-single config-multi config-none config-conditional config-many; do
+for component in config-single config-multi config-none config-conditional config-many config-and-env config-nested false-positive-resistance; do
   dir="$TC_DIR/$component"
   if [[ ! -d "$dir" ]]; then
     echo "  SKIP $component (not found)"

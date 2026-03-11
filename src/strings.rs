@@ -65,8 +65,11 @@ pub fn extract_string_args(
     // Scan consecutive pairs on the stack as potential (ptr, len)
     for i in 0..stack.len() - 1 {
         if let (SVal::Known(ptr), SVal::Known(len)) = (stack[i], stack[i + 1]) {
-            if ptr > 0 && (1..=200).contains(&len) {
-                if let Some(s) = read_string(memory_map, ptr as u32, len as u32) {
+            // Interpret as unsigned — a negative i32 is a valid large u32 address
+            let uptr = ptr as u32;
+            let ulen = len as u32;
+            if uptr > 0 && (1..=200).contains(&ulen) {
+                if let Some(s) = read_string(memory_map, uptr, ulen) {
                     if is_valid_env_name(&s) {
                         env_vars.insert(s);
                     }
@@ -82,8 +85,11 @@ fn read_string(memory_map: &HashMap<u32, u8>, ptr: u32, len: u32) -> Option<Stri
         return None;
     }
 
+    // Guard against u32 overflow on ptr + len
+    let end = ptr.checked_add(len)?;
+
     let mut bytes = Vec::with_capacity(len as usize);
-    for offset in ptr..ptr + len {
+    for offset in ptr..end {
         bytes.push(*memory_map.get(&offset)?);
     }
 
@@ -172,6 +178,13 @@ mod tests {
         assert!(is_valid_env_name("my_var")); // lowercase with underscore
         assert!(is_valid_env_name("PORT")); // all-caps, 4+ chars
         assert!(is_valid_env_name("X11_DISPLAY"));
+
+        // Valid with digits (#15)
+        assert!(is_valid_env_name("AWS_S3_BUCKET"));
+        assert!(is_valid_env_name("OAUTH2_CLIENT_ID"));
+        assert!(is_valid_env_name("API_V2_KEY"));
+        assert!(is_valid_env_name("AWS_S3_REGION"));
+        assert!(is_valid_env_name("V2_ENDPOINT"));
 
         // Invalid env var names
         assert!(!is_valid_env_name("")); // empty

@@ -44,7 +44,7 @@ fn analyze_module(module: &walrus::Module, env_vars: &mut HashSet<String>) {
     let env_call_chain = build_env_call_chain(module, &env_funcs);
 
     let memory_map = build_memory_map(module);
-    let global_values = collect_globals(module);
+    let mut global_values = collect_globals(module);
 
     for (_func_id, local_func) in module.funcs.iter_local() {
         let entry = local_func.entry_block();
@@ -53,7 +53,7 @@ fn analyze_module(module: &walrus::Module, env_vars: &mut HashSet<String>) {
             local_func,
             entry,
             &mut state,
-            &global_values,
+            &mut global_values,
             &memory_map,
             &env_call_chain,
             env_vars,

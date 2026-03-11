@@ -82,7 +82,7 @@ pub fn walk_seq(
     func: &walrus::LocalFunction,
     seq_id: InstrSeqId,
     state: &mut StackState,
-    globals: &HashMap<GlobalId, i32>,
+    globals: &mut HashMap<GlobalId, i32>,
     memory_map: &HashMap<u32, u8>,
     env_call_chain: &HashSet<FunctionId>,
     env_vars: &mut HashSet<String>,
@@ -103,8 +103,17 @@ pub fn walk_seq(
                     .map_or(SVal::Unknown, |&v| SVal::Known(v));
                 state.push(val);
             }
+            // Global set — track the mutation so subsequent reads see the new value
+            Instr::GlobalSet(gs) => {
+                let val = state.pop();
+                if let SVal::Known(v) = val {
+                    globals.insert(gs.global, v);
+                } else {
+                    globals.remove(&gs.global);
+                }
+            }
             // Single-pop instructions
-            Instr::GlobalSet(..) | Instr::Drop(..) | Instr::BrIf(..) => {
+            Instr::Drop(..) | Instr::BrIf(..) => {
                 state.pop();
             }
 
@@ -129,6 +138,12 @@ pub fn walk_seq(
                     BinaryOp::I32Add => {
                         state.push(match (lhs, rhs) {
                             (SVal::Known(x), SVal::Known(y)) => SVal::Known(x.wrapping_add(y)),
+                            _ => SVal::Unknown,
+                        });
+                    }
+                    BinaryOp::I32Sub => {
+                        state.push(match (lhs, rhs) {
+                            (SVal::Known(x), SVal::Known(y)) => SVal::Known(x.wrapping_sub(y)),
                             _ => SVal::Unknown,
                         });
                     }
