@@ -1,0 +1,10 @@
+[package]
+name = "config-single"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wit-bindgen = "0.53.1"
+
+[lib]
+crate-type = ["cdylib"]

@@ -13,7 +13,7 @@ fn main() -> Result<()> {
     let path = &args[1];
 
     println!("Analyzing WASM module for environment dependencies...");
-    println!("File: {}", path);
+    println!("File: {path}");
     println!("---------------------------------------------------\n");
 
     let env_vars = scan_wasm_file(path)?;
